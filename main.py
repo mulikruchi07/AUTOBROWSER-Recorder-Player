@@ -1,33 +1,35 @@
-from core.driver_manager import get_driver
+from ui.choose_profile import ChromeProfileChooser
 from ui.main_window import MainWindow
-from platforms.example_site.bot import ExampleBot
+from core.driver_manager import get_driver_using_profile
+from platforms.redbus.bot import RedBusBot
 
 def main():
-    # available platform keys must match your platforms folder names
-    platforms = ["example_site"]
-    platform, profile = MainWindow(platforms).run()
-    if not platform:
-        print("No platform selected. Exiting.")
+    # Step 1 — Select Chrome Profile
+    profile = ChromeProfileChooser().run()
+    if not profile:
+        print("No profile selected.")
         return
 
-    driver = get_driver(use_profile=True, profile_name=profile, headless=False)
-    bot = None
+    # Step 2 — Choose platform
+    chosen = MainWindow().run()
+    if chosen != "redbus":
+        print("Only RedBus supported right now.")
+        return
 
-    try:
-        if platform == "example_site":
-            bot = ExampleBot(driver)
-            bot.open_site()
-            logged = bot.ensure_login()
-            if not logged:
-                print("Login failed or cancelled.")
-                return
-            # example query (in a real GUI you'd accept user inputs)
-            bot.search_and_open("test product")
-            print("Reached product page. User should continue payment manually.")
-    finally:
-        # don't close immediately so user can complete payment in profile browser
-        print("Bot finished. Browser left open for user to complete actions.")
-        # driver.quit()  # optional - keep browser open for user to pay
+    # Step 3 — Create driver
+    driver = get_driver_using_profile(profile)
+
+    # Step 4 — Start RedBus bot
+    bot = RedBusBot(driver)
+    bot.open_site()
+    bot.ensure_login()
+
+    # Example test search
+    bot.search_buses("Mumbai", "Pune", "12-Feb-2025")
+    bot.open_first_bus()
+
+    print("Bot completed. Browser left open for user.")
+    # driver.quit()   # optional
 
 if __name__ == "__main__":
     main()
