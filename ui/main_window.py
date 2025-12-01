@@ -1,31 +1,22 @@
 import tkinter as tk
-from tkinter import messagebox
 
 class MainWindow:
-    def __init__(self, platforms):
-        self.platforms = platforms
-        self.selected = None
-
     def run(self):
         root = tk.Tk()
         root.title("CTRL+ALT+TICKET")
-        root.geometry("420x220")
+        root.geometry("380x200")
 
-        tk.Label(root, text="Choose platform to run bot for:").pack(pady=(12,0))
-        var = tk.StringVar(value=self.platforms[0])
-        for p in self.platforms:
-            tk.Radiobutton(root, text=p, variable=var, value=p).pack(anchor="w", padx=18)
+        tk.Label(root, text="RedBus Bot Automation", font=("Arial", 14)).pack(pady=20)
 
-        tk.Label(root, text="Chrome profile name (optional)").pack(pady=(12,0))
-        profile_entry = tk.Entry(root, width=30)
-        profile_entry.insert(0, "default")
-        profile_entry.pack()
+        val = tk.StringVar(value="redbus")
+
+        tk.Radiobutton(root, text="RedBus", variable=val, value="redbus").pack()
 
         def start():
-            self.selected = var.get()
-            self.profile = profile_entry.get().strip() or "default"
+            self.chosen = val.get()
             root.destroy()
 
-        tk.Button(root, text="Start Bot", command=start).pack(pady=18)
+        tk.Button(root, text="Start Bot", command=start).pack(pady=20)
         root.mainloop()
-        return getattr(self, "selected", None), getattr(self, "profile", "default")
+
+        return getattr(self, "chosen", None)
