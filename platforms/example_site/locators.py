@@ -1,7 +1,6 @@
-# platforms/example_site/locators.py
-# placeholder locators - replace before usage
-LOGIN_BUTTON = "//a[contains(., 'Login') or contains(., 'Sign In')]"
-USERNAME = "//input[@name='username' or @id='username']"
-PASSWORD = "//input[@name='password' or @id='password']"
-SEARCH_BOX = "//input[@type='search' or @name='q']"
-SEARCH_BUTTON = "//button[@type='submit' or contains(., 'Search')]"
+# example template fro platforms
+LOGIN_BUTTON = "//a[contains(., 'Sign in') or contains(., 'Login')]" # GitHub uses 'Sign in'
+USERNAME = "//input[@id='login_field']"
+PASSWORD = "//input[@id='password']"
+SEARCH_BOX = "//input[@placeholder='Search GitHub']"
+SEARCH_BUTTON = "//button[contains(., 'Search') or @type='submit']"
