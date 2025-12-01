@@ -1,41 +1,46 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
 import os
-import platform
+import subprocess
+from selenium.webdriver.chrome.service import Service
+from selenium import webdriver
+from webdriver_manager.chrome import ChromeDriverManager
 
-def default_profile_path():
-    # choose cross-platform default folder under project
-    base = os.path.abspath(os.path.join(os.getcwd(), "selenium_profiles"))
-    os.makedirs(base, exist_ok=True)
-    return base
+def get_chrome_executable():
+    """
+    Auto-detect Chrome installation.
+    Adjust path manually if needed.
+    """
+    possible_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expanduser("~/AppData/Local/Google/Chrome/Application/chrome.exe"),
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return p
+    raise Exception("Chrome executable not found. Update paths manually in get_chrome_executable().")
 
-def get_chrome_options(use_profile=True, profile_name="default", headless=False):
-    opts = webdriver.ChromeOptions()
-    opts.add_argument("--start-maximized")
-    # recommended tweaks to behave more human-like
-    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
-    opts.add_experimental_option('useAutomationExtension', False)
 
-    if use_profile:
-        profile_dir = r"C:\Users\dell\AppData\Local\Google\Chrome\User Data\Default"
-        # On first run Chrome creates the profile folder and stores cookies/sessions
-        opts.add_argument(f"--user-data-dir={profile_dir}")
+def get_driver_using_profile(profile_path):
+    """
+    Launch Selenium using the selected real Chrome profile.
+    """
+    options = webdriver.ChromeOptions()
+    options.add_argument("--start-maximized")
+    options.add_argument(f"--user-data-dir={profile_path}")
 
-    if headless:
-        opts.add_argument("--headless=new")
-        opts.add_argument("--window-size=1920,1080")
+    # Disable automation flag (stealth mode)
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
 
-    return opts
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=options
+    )
 
-def get_driver(use_profile=True, profile_name="default", headless=False):
-    opts = get_chrome_options(use_profile=use_profile, profile_name=profile_name, headless=headless)
-    service = Service(ChromeDriverManager().install())
-    driver = webdriver.Chrome(service=service, options=opts)
-    # small stealth settings
-    driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": """
-            Object.defineProperty(navigator, 'webdriver', {get: () => undefined})
-        """
-    })
+    # Remove navigator.webdriver flag
+    driver.execute_cdp_cmd(
+        "Page.addScriptToEvaluateOnNewDocument",
+        {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
+    )
+
     return driver
