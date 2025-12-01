@@ -10,7 +10,7 @@ class ExampleBot(BotBase):
         super().__init__(driver)
 
     def open_site(self):
-        self.d.get("https://in.bookmyshow.com/")  # example site URL
+        self.d.get("https://github.com/")  # example site URL
     def ensure_login(self):
         if SessionManager.is_logged_in(self.d, "example_site"):
             print("Already logged in via profile.")

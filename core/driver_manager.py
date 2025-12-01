@@ -18,7 +18,7 @@ def get_chrome_options(use_profile=True, profile_name="default", headless=False)
     opts.add_experimental_option('useAutomationExtension', False)
 
     if use_profile:
-        profile_dir = os.path.join(default_profile_path(), profile_name)
+        profile_dir = r"C:\Users\dell\AppData\Local\Google\Chrome\User Data\Default"
         # On first run Chrome creates the profile folder and stores cookies/sessions
         opts.add_argument(f"--user-data-dir={profile_dir}")
 
