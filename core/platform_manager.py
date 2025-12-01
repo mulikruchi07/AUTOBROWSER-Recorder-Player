@@ -31,9 +31,6 @@ class PlatformManager:
             print(f"Details: {e}")
             return None
         except AttributeError as e:
-            # THIS IS THE FIX: The error indicated the script was looking for 'RedbusBot' (lowercase 'b'), 
-            # but the class in platforms/redbus/bot.py is 'RedBusBot' (camelCase).
-            # The class_name logic above correctly generates 'RedBusBot'.
             print(f"Error: Could not find class '{class_name}' in the bot module.")
             print(f"Make sure the class is named correctly: '{class_name}'")
             print(f"Details: {e}")
