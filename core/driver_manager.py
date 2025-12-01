@@ -1,32 +1,31 @@
 import os
-import subprocess
 from selenium.webdriver.chrome.service import Service
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
-
-def get_chrome_executable():
-    """
-    Auto-detect Chrome installation.
-    Adjust path manually if needed.
-    """
-    possible_paths = [
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-        os.path.expanduser("~/AppData/Local/Google/Chrome/Application/chrome.exe"),
-    ]
-    for p in possible_paths:
-        if os.path.exists(p):
-            return p
-    raise Exception("Chrome executable not found. Update paths manually in get_chrome_executable().")
-
+from selenium.webdriver.chrome.options import Options
 
 def get_driver_using_profile(profile_path):
     """
-    Launch Selenium using the selected real Chrome profile.
+    Launch Selenium using the selected real Chrome profile path.
+    The profile path must point to the 'Default' or 'Profile X' folder
+    inside the main User Data directory.
     """
-    options = webdriver.ChromeOptions()
+    options = Options()
     options.add_argument("--start-maximized")
-    options.add_argument(f"--user-data-dir={profile_path}")
+    
+    # CRITICAL: We pass the *parent* folder path to --user-data-dir
+    # and use --profile-directory to specify the exact profile folder.
+    # We must extract the actual 'User Data' path and the profile folder name.
+    # Example: profile_path is C:\...\User Data\Default
+    # data_dir is C:\...\User Data
+    # profile_dir is Default
+    
+    # We assume profile_path is the full path to the profile folder (e.g., C:\...\User Data\Default)
+    profile_dir_name = os.path.basename(profile_path)
+    user_data_dir = os.path.dirname(profile_path)
+    
+    options.add_argument(f"--user-data-dir={user_data_dir}")
+    options.add_argument(f"--profile-directory={profile_dir_name}")
 
     # Disable automation flag (stealth mode)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -42,5 +41,7 @@ def get_driver_using_profile(profile_path):
         "Page.addScriptToEvaluateOnNewDocument",
         {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
     )
+    
+    print(f"Driver initialized using Profile Folder: {profile_dir_name}")
 
     return driver
