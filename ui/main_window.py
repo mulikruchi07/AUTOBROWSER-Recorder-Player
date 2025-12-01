@@ -4,13 +4,17 @@ class MainWindow:
     def run(self):
         root = tk.Tk()
         root.title("CTRL+ALT+TICKET")
-        root.geometry("380x200")
+        root.geometry("380x250") # Increased height for more options
 
-        tk.Label(root, text="RedBus Bot Automation", font=("Arial", 14)).pack(pady=20)
+        tk.Label(root, text="Bot Automation Platform Selector", font=("Arial", 14)).pack(pady=20)
 
-        val = tk.StringVar(value="redbus")
+        # Use a list of supported platforms
+        platforms = [("RedBus", "redbus"), ("Example Site (GitHub)", "example_site")]
+        
+        val = tk.StringVar(value=platforms[0][1])
 
-        tk.Radiobutton(root, text="RedBus", variable=val, value="redbus").pack()
+        for text, value in platforms:
+            tk.Radiobutton(root, text=text, variable=val, value=value).pack(anchor="w", padx=100)
 
         def start():
             self.chosen = val.get()
