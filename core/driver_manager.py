@@ -5,10 +5,10 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.options import Options
 
 def get_driver_using_profile(profile_path):
-    """
+    r"""
     Launch Selenium using the selected real Chrome profile path.
     
-    profile_path: Full path to the specific profile folder (e.g., C:\...\User Data\Profile 9)
+    profile_path: Full path to the specific profile folder (e.g., C:\\...\User Data\Profile 9)
     """
     options = Options()
     options.add_argument("--start-maximized")
