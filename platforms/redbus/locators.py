@@ -1,17 +1,13 @@
+# platforms/redbus/locators.py
 from selenium.webdriver.common.by import By
 
-# Login Locators
-LOGIN_BTN = "//div[contains(text(),'Sign In')]"
-MOBILE_FIELD = "//input[@id='mobileNoInp']"
-OTP_BTN = "//button[contains(text(),'GENERATE OTP')]"
+ACCOUNT_MENU = (By.XPATH, "//div[contains(text(),'Account')]")
+LOGIN_OPTION = (By.XPATH, "//div[contains(text(),'Sign In')]")
 
-# Search Locators
-FROM_FIELD = "//input[@id='src']"
-TO_FIELD = "//input[@id='dest']"
-DATE_FIELD = "//input[@id='onward_cal']"
-SEARCH_BTN = "//button[contains(text(),'Search Buses')]"
+FROM_FIELD = (By.ID, "src")
+TO_FIELD = (By.ID, "dest")
+DATE_FIELD = (By.ID, "onward_cal")
 
-# Results Locators
-FIRST_BUS = "//div[contains(@class,'bus-card')]"
-VIEW_SEATS_BTN = "//div[contains(text(),'View Seats')]"
-SELECT_SEATS_BTN = "//div[contains(text(),'SELECT SEATS')]"
+SEARCH_BUTTON = (By.XPATH, "//button[contains(text(),'Search')]")
+
+BUS_CARD = (By.XPATH, "//div[contains(@class,'bus-item') or contains(@class,'bus-card')]")
