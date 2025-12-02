@@ -1,30 +1,23 @@
+# ui/main_window.py
 import tkinter as tk
 
 class MainWindow:
     def run(self):
         root = tk.Tk()
         root.title("CTRL+ALT+TICKET")
-        root.geometry("380x250")
+        root.geometry("350x180")
 
-        tk.Label(root, text="Bot Automation Platform Selector", font=("Arial", 14, "bold")).pack(pady=20)
+        tk.Label(root, text="Select Platform").pack(pady=10)
 
-        # List of supported platforms (name, internal_key)
-        platforms = [
-            ("RedBus (Bus Tickets)", "redbus"), 
-            ("Example Site (GitHub)", "example_site")
-        ]
-        
-        val = tk.StringVar(value=platforms[0][1])
+        val = tk.StringVar(value="redbus")
 
-        for text, value in platforms:
-            # Adjusted styling for better UI
-            tk.Radiobutton(root, text=text, variable=val, value=value, font=("Arial", 10)).pack(anchor="w", padx=100)
+        tk.Radiobutton(root, text="RedBus", variable=val, value="redbus").pack()
 
         def start():
-            self.chosen = val.get()
+            self.choice = val.get()
             root.destroy()
 
-        tk.Button(root, text="Start Bot", command=start, bg="#008CBA", fg="white", font=("Arial", 12, "bold")).pack(pady=20)
-        root.mainloop()
+        tk.Button(root, text="Start", command=start).pack(pady=20)
 
-        return getattr(self, "chosen", None)
+        root.mainloop()
+        return getattr(self, "choice", None)
