@@ -2,55 +2,78 @@
 import os
 import platform
 import subprocess
-import time
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import WebDriverException
 
+def get_chrome_binary_path():
+    """
+    Detect correct Chrome executable path.
+    Adjust manually if needed.
+    """
+    possible_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        os.path.expanduser("~") + r"\AppData\Local\Google\Chrome\Application\chrome.exe",
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            return p
+
+    raise FileNotFoundError(
+        "Chrome binary not found. Update get_chrome_binary_path() with the correct location."
+    )
+
 def default_chrome_user_data_path():
     system = platform.system()
     home = os.path.expanduser("~")
     if system == "Windows":
-        return os.path.join(os.environ.get("LOCALAPPDATA", os.path.join(home, "AppData", "Local")), "Google", "Chrome", "User Data")
+        return os.path.join(home, "AppData", "Local", "Google", "Chrome", "User Data")
     if system == "Darwin":
         return os.path.join(home, "Library", "Application Support", "Google", "Chrome")
-    # Linux
     return os.path.join(home, ".config", "google-chrome")
 
-def get_driver_for_profile(user_data_dir, profile_directory, headless=False, verbose=False):
-    """
-    Launch Chrome using an existing user-data dir and profile-directory.
-    user_data_dir: full path to "User Data" folder (contains Default, Profile 1, ...)
-    profile_directory: profile folder name (e.g., "Default", "Profile 1", "CTRL-ALT-PROFILE")
-    """
-    if not os.path.exists(user_data_dir):
-        raise FileNotFoundError(f"user-data-dir not found: {user_data_dir}")
+def get_driver_for_profile(user_data_dir, profile_directory):
+    chrome_binary = get_chrome_binary_path()
 
     options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
+    options.binary_location = chrome_binary
+
+    # REQUIRED FLAGS FOR PROFILE-BASED SELENIUM
+    options.add_argument("--remote-debugging-port=9222")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-software-rasterizer")
+    options.add_argument("--disable-features=RendererCodeIntegrity")
+    options.add_argument("--disable-background-mode")
+    options.add_argument("--disable-hang-monitor")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--no-default-browser-check")
+    options.add_argument("--no-first-run")
+
+    # PROFILE
     options.add_argument(f"--user-data-dir={user_data_dir}")
     options.add_argument(f"--profile-directory={profile_directory}")
 
-    # reduce obvious automation flags
+    # Avoid automation banners
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
-    if headless:
-        options.add_argument("--headless=new")
-        options.add_argument("--window-size=1920,1080")
-
+    # Driver
     service = Service(ChromeDriverManager().install())
+
     try:
         driver = webdriver.Chrome(service=service, options=options)
-        # attempt to hide webdriver property
-        try:
-            driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-                "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-            })
-        except Exception:
-            pass
+        # hide navigator.webdriver
+        driver.execute_cdp_cmd(
+            "Page.addScriptToEvaluateOnNewDocument",
+            {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"}
+        )
         return driver
     except WebDriverException as e:
-        # raise a clearer message for the caller to act on
-        raise RuntimeError(f"Failed to create Selenium session. Details: {e}") from e
+        raise RuntimeError(
+            f"Chrome failed to start with the selected profile.\nFull error:\n{str(e)}"
+        )
