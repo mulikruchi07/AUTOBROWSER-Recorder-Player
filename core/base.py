@@ -31,6 +31,10 @@ class BotBase:
         except TimeoutException:
             print(f"Click failed: Element not clickable/visible using {by.upper()}: {selector}")
             return False
+        except NoSuchElementException:
+            # Added error handling for when the element isn't found at all
+            print(f"Click failed: Element not found using {by.upper()}: {selector}")
+            return False
         except ElementClickInterceptedException:
             print(f"Click failed: Element intercepted by another element. Using JS click.")
             try:
