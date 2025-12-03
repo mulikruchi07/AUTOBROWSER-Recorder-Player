@@ -1,4 +1,5 @@
 # ui/main_window.py
+import time
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import threading
