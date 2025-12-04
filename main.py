@@ -1,5 +1,8 @@
 # main.py
-from ui.main_window import main as run_app
+from ui.main_window import App
+import tkinter as tk
 
 if __name__ == "__main__":
-    run_app()
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
