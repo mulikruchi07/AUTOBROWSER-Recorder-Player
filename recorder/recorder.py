@@ -4,120 +4,108 @@ import time
 import threading
 import os
 from selenium.webdriver.common.by import By
-from selenium.common.exceptions import WebDriverException, JavascriptException, NoSuchElementException
+from selenium.common.exceptions import WebDriverException
 
-# Robust injected JS:
-# - installs once per page
-# - records click, input, change, scroll (debounced), dragstart/dragend, navigation markers
-# - exposes a flush function that returns and clears events
-JS_INJECT_LISTENER = """
+# JS: installs listener on every new document by using window.top storage
+JS_LISTENER = r"""
 (function(){
-  if(window.__AUTOBROWSER_INSTALLED__) return 'already';
-  window.__AUTOBROWSER_INSTALLED__ = true;
-  window.__AUTOBROWSER_EVENTS__ = window.__AUTOBROWSER_EVENTS__ || [];
+  try{
+    if (window.top.__AUTOBROWSER_INSTALLED__) return 'already';
+    window.top.__AUTOBROWSER_INSTALLED__ = true;
+    window.top.__AUTOBROWSER_EVENTS__ = window.top.__AUTOBROWSER_EVENTS__ || [];
 
-  function cssPath(el){
-    if(!el) return '';
-    if(el.id) return '#'+el.id;
-    var parts = [];
-    var node = el;
-    while(node && node.nodeType===1 && node.tagName.toLowerCase()!=='html'){
-      var name = node.tagName.toLowerCase();
-      if(node.className){
-        var cls = node.className.trim().split(/\s+/).join('.');
-        if(cls) name += '.'+cls;
+    function cssPath(el){
+      if(!el) return '';
+      try{
+        if(el.id) return '#'+el.id;
+        var parts=[];
+        var node=el;
+        while(node && node.nodeType===1 && node.tagName.toLowerCase()!=='html'){
+          var sel=node.tagName.toLowerCase();
+          if(node.className){
+            var cls = node.className.trim().split(/\s+/).join('.');
+            if(cls) sel += '.'+cls;
+          }
+          var sib=node; var nth=1;
+          while(sib.previousElementSibling){
+            sib = sib.previousElementSibling;
+            if(sib.tagName === node.tagName) nth++;
+          }
+          if(nth>1) sel += ':nth-of-type('+nth+')';
+          parts.unshift(sel);
+          node = node.parentElement;
+        }
+        return parts.join(' > ');
+      }catch(e){
+        return '';
       }
-      var sibling = node;
-      var nth = 1;
-      while(sibling.previousElementSibling){
-        sibling = sibling.previousElementSibling;
-        if(sibling.tagName === node.tagName) nth++;
-      }
-      if(nth>1) name += ':nth-of-type('+nth+')';
-      parts.unshift(name);
-      node = node.parentElement;
     }
-    return parts.join(' > ');
+
+    function push(ev){
+      try{ window.top.__AUTOBROWSER_EVENTS__.push(ev); }catch(e){}
+    }
+
+    document.addEventListener('click', function(e){
+      try{
+        var el=e.target;
+        push({action:'click', selector: cssPath(el), tag: el.tagName, text: (el.innerText||'').trim(), ts: Date.now()});
+      }catch(e){}
+    }, true);
+
+    document.addEventListener('input', function(e){
+      try{
+        var el=e.target;
+        var tag = el.tagName && el.tagName.toLowerCase();
+        if(tag==='input' || tag==='textarea' || el.isContentEditable){
+          push({action:'type', selector: cssPath(el), value: el.value||el.innerText||'', ts: Date.now()});
+        }
+      }catch(e){}
+    }, true);
+
+    document.addEventListener('change', function(e){
+      try{
+        var el=e.target;
+        push({action:'type', selector: cssPath(el), value: el.value||'', ts: Date.now()});
+      }catch(e){}
+    }, true);
+
+    // scroll (debounced)
+    var sTO=null;
+    window.addEventListener('scroll', function(){
+      try{
+        if(sTO) clearTimeout(sTO);
+        sTO = setTimeout(function(){
+          try{ push({action:'scroll', x: window.scrollX||0, y: window.scrollY||0, ts: Date.now()}); }catch(e){}
+        }, 220);
+      }catch(e){}
+    }, true);
+
+    // drag events
+    document.addEventListener('dragstart', function(e){
+      try{ push({action:'dragstart', selector: cssPath(e.target), ts: Date.now()}); }catch(e){}
+    }, true);
+    document.addEventListener('dragend', function(e){
+      try{ push({action:'dragend', selector: cssPath(e.target), ts: Date.now()}); }catch(e){}
+    }, true);
+
+    window.addEventListener('beforeunload', function(){
+      try{ push({action:'navigate_marker', url: location.href, ts: Date.now()}); }catch(e){}
+    });
+
+    return 'ok';
+  }catch(ex){
+    return 'err';
   }
-
-  function pushEvent(ev){
-    try{ window.__AUTOBROWSER_EVENTS__.push(ev); }catch(e){}
-  }
-
-  // Clicks
-  document.addEventListener('click', function(e){
-    try{
-      var el = e.target;
-      pushEvent({action:'click', selector: cssPath(el), tag: el.tagName, text: (el.innerText||'').trim(), ts: Date.now()});
-    }catch(err){}
-  }, true);
-
-  // Input typing (input events). We record final value on blur as well to be safer.
-  document.addEventListener('input', function(e){
-    try{
-      var el = e.target;
-      var tag = el.tagName && el.tagName.toLowerCase();
-      if(tag==='input' || tag==='textarea' || el.isContentEditable){
-        pushEvent({action:'type', selector: cssPath(el), value: el.value || el.innerText || '', ts: Date.now()});
-      }
-    }catch(err){}
-  }, true);
-
-  document.addEventListener('change', function(e){
-    try{
-      var el = e.target;
-      pushEvent({action:'type', selector: cssPath(el), value: el.value || '', ts: Date.now()});
-    }catch(err){}
-  }, true);
-
-  // Scroll (debounced)
-  var _lastScroll = 0;
-  var _scrollTimeout = null;
-  window.addEventListener('scroll', function(e){
-    try{
-      if(_scrollTimeout) clearTimeout(_scrollTimeout);
-      _scrollTimeout = setTimeout(function(){
-        try{
-          pushEvent({action:'scroll', x: window.scrollX, y: window.scrollY, ts: Date.now()});
-        }catch(e){}
-      }, 250);
-    }catch(err){}
-  }, true);
-
-  // Drag events
-  document.addEventListener('dragstart', function(e){
-    try{
-      var el = e.target;
-      pushEvent({action:'dragstart', selector: cssPath(el), ts: Date.now()});
-    }catch(err){}
-  }, true);
-  document.addEventListener('dragend', function(e){
-    try{
-      var el = e.target;
-      pushEvent({action:'dragend', selector: cssPath(el), ts: Date.now()});
-    }catch(err){}
-  }, true);
-
-  // navigation marker
-  window.addEventListener('beforeunload', function(){
-    try{
-      pushEvent({action:'navigate', url: location.href, ts: Date.now()});
-    }catch(e){}
-  });
-
-  return 'ok';
 })();
 """
 
-JS_FLUSH_EVENTS = """
+JS_FLUSH = r"""
 (function(){
   try{
-    var ev = window.__AUTOBROWSER_EVENTS__ || [];
+    var ev = (window.top && window.top.__AUTOBROWSER_EVENTS__) || [];
     var out = JSON.stringify(ev.splice(0, ev.length));
     return out;
-  }catch(e){
-    return '[]';
-  }
+  }catch(e){ return '[]';}
 })();
 """
 
@@ -125,80 +113,80 @@ class Recorder:
     def __init__(self, driver, poll_interval=0.6):
         self.driver = driver
         self.poll_interval = poll_interval
-        self.recording = False
+        self._running = False
         self._thread = None
         self._lock = threading.Lock()
-        self.script = []  # a list of action dicts
+        self.script = []
 
-    # injection
-    def inject(self):
+    # install via CDP (persistent) and also via execute_script (current page)
+    def install_listener(self):
         if not self.driver:
-            return None
+            return False
         try:
-            return self.driver.execute_script(JS_INJECT_LISTENER)
-        except (JavascriptException, WebDriverException):
-            return None
+            # persistent on new documents
+            try:
+                self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": JS_LISTENER})
+            except Exception:
+                pass
+            # also inject into current document
+            try:
+                self.driver.execute_script(JS_LISTENER)
+            except Exception:
+                pass
+            return True
+        except Exception:
+            return False
 
     def _poll_loop(self):
-        while self.recording:
+        while self._running:
             try:
-                raw = self.driver.execute_script(JS_FLUSH_EVENTS)
+                raw = self.driver.execute_script(JS_FLUSH)
                 if raw:
                     try:
-                        events = json.loads(raw)
+                        arr = json.loads(raw)
                     except Exception:
-                        events = []
-                    if events:
+                        arr = []
+                    if arr:
                         with self._lock:
-                            for ev in events:
-                                self._append_event(ev)
+                            for ev in arr:
+                                self._append_ev(ev)
+                time.sleep(self.poll_interval)
+            except WebDriverException:
                 time.sleep(self.poll_interval)
             except Exception:
-                # driver gone or page navigation heavy
                 time.sleep(self.poll_interval)
-                continue
 
     def start(self):
         if not self.driver:
-            raise RuntimeError("No driver to record from")
-        # try inject multiple times (useful if page not ready)
-        try:
-            self.inject()
-        except Exception:
-            pass
-        self.recording = True
+            raise RuntimeError("Driver missing")
+        self.install_listener()
+        self._running = True
         self._thread = threading.Thread(target=self._poll_loop, daemon=True)
         self._thread.start()
 
     def stop(self):
-        self.recording = False
+        self._running = False
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
 
-    def _append_event(self, ev):
-        # Normalize events to our action format
-        action = ev.get('action')
-        if action == 'click':
+    def _append_ev(self, ev):
+        act = ev.get('action')
+        if act == 'click':
             self.script.append({'action':'click','selector':ev.get('selector'),'meta':{'tag':ev.get('tag'),'text':ev.get('text')},'ts':ev.get('ts')})
-        elif action == 'type':
-            # skip empty or password-like types
+        elif act == 'type':
             val = ev.get('value','')
-            if val is None:
-                return
             self.script.append({'action':'type','selector':ev.get('selector'),'value':val,'ts':ev.get('ts')})
-        elif action == 'scroll':
+        elif act == 'scroll':
             self.script.append({'action':'scroll','x':ev.get('x',0),'y':ev.get('y',0),'ts':ev.get('ts')})
-        elif action in ('dragstart','dragend'):
-            self.script.append({'action':action,'selector':ev.get('selector'),'ts':ev.get('ts')})
-        elif action == 'navigate':
-            # we record navigation markers as helpful (but playback will re-navigate when navigate actions appear in script)
+        elif act in ('dragstart','dragend'):
+            self.script.append({'action':act,'selector':ev.get('selector'),'ts':ev.get('ts')})
+        elif act == 'navigate_marker':
             self.script.append({'action':'navigate_marker','url':ev.get('url'),'ts':ev.get('ts')})
         else:
             # unknown - store raw
             self.script.append(ev)
 
-    # manual script operations
     def get_script(self):
         with self._lock:
             return list(self.script)
@@ -209,26 +197,22 @@ class Recorder:
 
     def save(self, path):
         with self._lock:
-            with open(path,"w",encoding="utf-8") as f:
+            with open(path,'w',encoding='utf-8') as f:
                 json.dump(self.script, f, indent=2, ensure_ascii=False)
 
     def load(self, path):
-        with open(path,"r",encoding="utf-8") as f:
+        with open(path,'r',encoding='utf-8') as f:
             data = json.load(f)
         with self._lock:
             self.script = data
 
-    # helper UI actions
+    # manual helpers
     def add_wait(self, seconds):
         with self._lock:
-            self.script.append({'action':'wait','seconds': float(seconds), 'ts': int(time.time()*1000)})
+            self.script.append({'action':'wait','seconds':float(seconds),'ts':int(time.time()*1000)})
 
     def add_screenshot(self, path=None):
-        # take screenshot now and add action referencing file
-        if not self.driver:
-            return None
         if not path:
-            # generate file in cwd with timestamp
             path = os.path.abspath(f"screenshot_{int(time.time())}.png")
         try:
             self.driver.save_screenshot(path)
@@ -239,18 +223,19 @@ class Recorder:
             return None
 
     def add_scroll(self, x=None, y=None):
-        if x is None or y is None:
-            try:
-                x = self.driver.execute_script("return window.scrollX || 0;")
-                y = self.driver.execute_script("return window.scrollY || 0;")
-            except Exception:
-                x,y = 0,0
+        try:
+            if x is None or y is None:
+                x = int(self.driver.execute_script("return window.scrollX || 0"))
+                y = int(self.driver.execute_script("return window.scrollY || 0"))
+        except Exception:
+            x,y = 0,0
         with self._lock:
-            self.script.append({'action':'scroll','x':int(x),'y':int(y),'ts':int(time.time()*1000)})
+            self.script.append({'action':'scroll','x':x,'y':y,'ts':int(time.time()*1000)})
 
-    # Playback
-    def _find_element(self, selector):
-        # try css then xpath
+    # playback
+    def _find(self, selector):
+        if not selector:
+            return None
         try:
             return self.driver.find_element(By.CSS_SELECTOR, selector)
         except Exception:
@@ -263,71 +248,60 @@ class Recorder:
         actions = self.get_script()
         for step in actions:
             try:
-                act = step.get('action')
-                if act == 'click':
-                    sel = step.get('selector')
-                    el = self._find_element(sel) if sel else None
+                a = step.get('action')
+                if a == 'click':
+                    el = self._find(step.get('selector'))
                     if el:
                         try:
                             el.click()
                         except Exception:
-                            # fallback execute JS click
                             try:
                                 self.driver.execute_script("arguments[0].click();", el)
                             except Exception:
                                 pass
-                elif act == 'type':
-                    sel = step.get('selector')
-                    val = step.get('value','')
-                    el = self._find_element(sel) if sel else None
+                elif a == 'type':
+                    el = self._find(step.get('selector'))
                     if el:
                         try:
                             el.clear()
-                            el.send_keys(val)
+                            el.send_keys(step.get('value',''))
                         except Exception:
                             pass
-                elif act == 'navigate':
-                    url = step.get('url')
-                    if url:
-                        self.driver.get(url)
-                        time.sleep(0.8)
-                        # re-inject after navigation
-                        try:
-                            self.inject()
-                        except Exception:
-                            pass
-                elif act == 'wait':
-                    secs = float(step.get('seconds', 1))
-                    time.sleep(secs)
-                elif act == 'screenshot':
+                elif a == 'scroll':
+                    try:
+                        self.driver.execute_script("window.scrollTo(arguments[0], arguments[1]);", int(step.get('x',0)), int(step.get('y',0)))
+                    except Exception:
+                        pass
+                elif a == 'wait':
+                    time.sleep(float(step.get('seconds',1)))
+                elif a == 'screenshot':
                     p = step.get('path')
                     if p:
                         try:
                             self.driver.save_screenshot(p)
                         except Exception:
                             pass
-                elif act == 'scroll':
-                    x = int(step.get('x',0))
-                    y = int(step.get('y',0))
-                    try:
-                        self.driver.execute_script("window.scrollTo(arguments[0], arguments[1]);", x, y)
-                    except Exception:
-                        pass
-                elif act == 'dragstart' or act == 'dragend':
-                    # best-effort: try to simulate drag by JS dispatch (may not work for complex apps)
-                    sel = step.get('selector')
-                    el = self._find_element(sel) if sel else None
+                elif a == 'navigate':
+                    url = step.get('url')
+                    if url:
+                        self.driver.get(url)
+                        time.sleep(0.7)
+                        try:
+                            self.install_listener()
+                        except Exception:
+                            pass
+                elif a in ('dragstart','dragend'):
+                    el = self._find(step.get('selector'))
                     if el:
                         try:
                             self.driver.execute_script("""
                                 const el = arguments[0];
                                 const ev = new DragEvent(arguments[1], {bubbles:true, cancelable:true});
                                 el.dispatchEvent(ev);
-                            """, el, 'dragstart' if act=='dragstart' else 'dragend')
+                            """, el, a)
                         except Exception:
                             pass
-                # ignore navigate_marker
+                # ignore navigate_marker entries
             except Exception:
-                # continue on errors
                 pass
             time.sleep(delay_between)
