@@ -1,11 +1,10 @@
 # core/driver_manager.py
 import tempfile
-import os
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 
-def get_driver_with_temp_profile():
+def get_driver_with_temp_profile(headless=False):
     profile_dir = tempfile.mkdtemp(prefix="autobrowser-")
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
@@ -16,12 +15,19 @@ def get_driver_with_temp_profile():
     options.add_argument("--disable-popup-blocking")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
+    if headless:
+        options.add_argument("--headless=new")
+        options.add_argument("--window-size=1920,1080")
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+
+    # try to hide webdriver property
     try:
         driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
             "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         })
     except Exception:
         pass
+
     return driver
