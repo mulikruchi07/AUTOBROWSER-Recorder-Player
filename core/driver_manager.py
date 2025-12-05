@@ -7,7 +7,6 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 def get_driver_with_temp_profile():
     profile_dir = tempfile.mkdtemp(prefix="autobrowser-")
-
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
     options.add_argument(f"--user-data-dir={profile_dir}")
@@ -15,7 +14,14 @@ def get_driver_with_temp_profile():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--disable-popup-blocking")
-
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        })
+    except Exception:
+        pass
     return driver
