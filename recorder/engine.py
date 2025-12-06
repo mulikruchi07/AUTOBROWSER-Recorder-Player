@@ -1,22 +1,17 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-import time, json
+import json, time, threading, os
+from selenium.webdriver.common.by import By
 
 JS_LISTENER = """
 window.__EVTS = window.__EVTS || [];
-
 function cssPath(el){
     if (!el) return "";
     if (el.id) return "#" + el.id;
-
     let path = [];
     while (el && el.nodeType === 1 && el.tagName.toLowerCase() !== "html") {
         let selector = el.tagName.toLowerCase();
         if (el.className) {
             selector += "." + el.className.trim().replace(/\s+/g, ".");
         }
-
         let sib = el, nth = 1;
         while (sib = sib.previousElementSibling) {
             if (sib.tagName === el.tagName) nth++;
@@ -44,28 +39,41 @@ document.addEventListener("input", e => {
         ts: Date.now()
     });
 }, true);
-
 """
 
-JS_FLUSH = "return window.__EVTS.splice(0, window.__EVTS.length);"
+JS_FLUSH = """return window.__EVTS.splice(0, window.__EVTS.length);"""
 
-print("Launching browser...")
-driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()))
-driver.get("https://www.w3schools.com/html/html_forms.asp")
+class Recorder:
+    def __init__(self, driver):
+        self.driver = driver
+        self.script = []
+        self.running = False
 
-time.sleep(1)
-driver.execute_script(JS_LISTENER)
-print("Listener injected.")
+    def install_listener(self):
+        try:
+            self.driver.execute_script(JS_LISTENER)
+            return True
+        except:
+            return False
 
-print("\nTry clicking or typing in the browser window...")
-print("Collecting events for 10 seconds...\n")
+    def _poll(self):
+        while self.running:
+            events = self.driver.execute_script(JS_FLUSH)
+            for ev in events:
+                self.script.append(ev)
+            time.sleep(0.3)
 
-for _ in range(20):
-    time.sleep(0.5)
-    evts = driver.execute_script(JS_FLUSH)
-    if evts:
-        print("Captured:", json.dumps(evts, indent=2))
+    def start(self):
+        self.install_listener()
+        self.running = True
+        threading.Thread(target=self._poll, daemon=True).start()
 
-driver.quit()
+    def stop(self):
+        self.running = False
 
-print("\nDone.")
+    def get_script(self):
+        return self.script
+
+    def save(self, path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.script, f, indent=2)
