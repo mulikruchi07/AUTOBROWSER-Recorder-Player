@@ -8,8 +8,8 @@ from recorder.recorder import Recorder
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("AUTOBROWSER Recorder & Player (CDP-injection)")
-        root.geometry("920x620")
+        root.title("AUTOBROWSER Recorder & Player (Diagnostics)")
+        root.geometry("930x640")
 
         self.driver = None
         self.rec = None
@@ -18,34 +18,43 @@ class App:
         left = tk.Frame(root)
         left.pack(side="left", fill="y", padx=8, pady=8)
 
-        tk.Button(left, text="Launch Browser", width=26, command=self.launch).pack(pady=6)
+        tk.Button(left, text="Launch Browser", width=28, command=self.launch).pack(pady=6)
 
         tk.Label(left, text="URL:").pack(anchor="w")
         self.url_entry = tk.Entry(left, width=36)
         self.url_entry.pack(pady=4)
-        self.url_entry.insert(0,"https://www.redbus.in")
-        tk.Button(left, text="Navigate", width=26, command=self.navigate).pack(pady=4)
+        self.url_entry.insert(0,"https://www.w3schools.com/html/html_forms.asp")
+        tk.Button(left, text="Navigate", width=28, command=self.navigate).pack(pady=4)
 
-        self.start_btn = tk.Button(left, text="Start Recording", width=26, state="disabled", command=self.start_record)
+        self.start_btn = tk.Button(left, text="Start Recording", width=28, state="disabled", command=self.start_record)
         self.start_btn.pack(pady=6)
-        self.stop_btn = tk.Button(left, text="Stop Recording", width=26, state="disabled", command=self.stop_record)
+        self.stop_btn = tk.Button(left, text="Stop Recording", width=28, state="disabled", command=self.stop_record)
         self.stop_btn.pack(pady=6)
 
-        tk.Button(left, text="Play Script", width=26, command=self.play_script).pack(pady=6)
-        tk.Button(left, text="Save Script", width=26, command=self.save_script).pack(pady=6)
-        tk.Button(left, text="Load Script", width=26, command=self.load_script).pack(pady=6)
-        tk.Button(left, text="Clear Script", width=26, command=self.clear_script).pack(pady=6)
+        tk.Button(left, text="Play Script", width=28, command=self.play_script).pack(pady=6)
+        tk.Button(left, text="Save Script", width=28, command=self.save_script).pack(pady=6)
+        tk.Button(left, text="Load Script", width=28, command=self.load_script).pack(pady=6)
+        tk.Button(left, text="Clear Script", width=28, command=self.clear_script).pack(pady=6)
 
         tk.Label(left, text="Manual actions:").pack(pady=(12,0))
-        tk.Button(left, text="Insert Wait", width=26, command=self.insert_wait).pack(pady=4)
-        tk.Button(left, text="Insert Screenshot", width=26, command=self.insert_screenshot).pack(pady=4)
-        tk.Button(left, text="Insert Scroll (current)", width=26, command=self.insert_scroll).pack(pady=4)
+        tk.Button(left, text="Insert Wait", width=28, command=self.insert_wait).pack(pady=4)
+        tk.Button(left, text="Insert Screenshot", width=28, command=self.insert_screenshot).pack(pady=4)
+        tk.Button(left, text="Insert Scroll (current)", width=28, command=self.insert_scroll).pack(pady=4)
+
+        tk.Button(left, text="Test Listener", width=28, command=self.test_listener).pack(pady=(12,4))
+
+        # diagnostics
+        tk.Label(left, text="Diagnostics:").pack(pady=(12,0))
+        self.inject_status = tk.StringVar(value="Listener: not installed")
+        tk.Label(left, textvariable=self.inject_status, fg="darkgreen").pack(anchor="w")
+        self.event_count_var = tk.StringVar(value="Events collected: 0")
+        tk.Label(left, textvariable=self.event_count_var).pack(anchor="w")
 
         right = tk.Frame(root)
         right.pack(side="right", fill="both", expand=True, padx=8, pady=8)
 
         tk.Label(right, text="Recorded Script").pack()
-        self.listbox = tk.Listbox(right, width=110, height=34)
+        self.listbox = tk.Listbox(right, width=110, height=36)
         self.listbox.pack(fill="both", expand=True)
 
         self.status_var = tk.StringVar(value="No browser")
@@ -62,13 +71,12 @@ class App:
         try:
             self.driver = get_driver_with_temp_profile()
             self.rec = Recorder(self.driver)
-            # install listener persistently upfront
-            try:
-                self.rec.install_listener()
-            except Exception:
-                pass
+            installed = self.rec.install_listener()
+            self.inject_status.set("Listener: installed" if installed else "Listener: install attempted")
             self.start_btn.config(state="normal")
-            self.set_status("Browser launched; listener installed")
+            self.set_status("Browser launched")
+            # refresh event count regularly
+            threading.Thread(target=self._event_count_poller, daemon=True).start()
         except Exception as e:
             messagebox.showerror("Launch error", str(e))
             self.set_status("Launch failed")
@@ -83,11 +91,9 @@ class App:
         try:
             self.driver.get(url)
             time.sleep(0.8)
-            # ensure listener re-injection
-            try:
-                self.rec.install_listener()
-            except Exception:
-                pass
+            # re-install listener after navigation
+            installed = self.rec.install_listener()
+            self.inject_status.set("Listener: installed after nav" if installed else "Listener: install attempted (nav)")
             self.set_status(f"Navigated to {url}")
         except Exception as e:
             messagebox.showerror("Navigation error", str(e))
@@ -108,10 +114,10 @@ class App:
             return
         self.rec.stop()
         self.polling = False
-        self.stop_btn.config(state="disabled")
         self.start_btn.config(state="normal")
+        self.stop_btn.config(state="disabled")
         self.update_list()
-        self.set_status("Stopped recording")
+        self.set_status("Recording stopped")
 
     def _ui_poller(self):
         while self.polling:
@@ -128,6 +134,7 @@ class App:
         self.listbox.delete(0, tk.END)
         for i,s in enumerate(script):
             self.listbox.insert(tk.END, self._format(s,i))
+        self.event_count_var.set(f"Events collected: {len(script)}")
 
     def _format(self,s,i):
         a=s.get('action')
@@ -197,7 +204,6 @@ class App:
         if not self.rec:
             messagebox.showwarning("No recorder", "Launch browser first")
             return
-        from tkinter import filedialog
         path = filedialog.asksaveasfilename(defaultextension=".png")
         if not path: return
         p = self.rec.add_screenshot(path=path)
@@ -213,3 +219,15 @@ class App:
             return
         self.rec.add_scroll()
         self.update_list()
+
+    def test_listener(self):
+        if not self.rec:
+            messagebox.showwarning("No recorder", "Launch browser first")
+            return
+        ok, info = self.rec.test_listener()
+        if ok:
+            messagebox.showinfo("Listener Test", f"Listener OK — {info}")
+            self.inject_status.set("Listener: OK (test event detected)")
+        else:
+            messagebox.showwarning("Listener Test", f"Listener failed — {info}")
+            self.inject_status.set("Listener: FAILED")
