@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 import threading, time
 from core.driver_manager import get_driver_with_temp_profile
-from recorder.recorder import Recorder
+from recorder.engine import Recorder
 
 class App:
     def __init__(self, root):
