@@ -1,32 +1,28 @@
 # recorder/recorder.py
-import json
-import time
-import threading
-import os
+import json, time, threading, os
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
 
-# JS: installs listener on every new document by using window.top storage
-JS_LISTENER = r"""
+# JS listener that we will both inject via CDP and execute on current doc.
+JS_LISTENER = """
 (function(){
-  try{
+  try {
     if (window.top.__AUTOBROWSER_INSTALLED__) return 'already';
     window.top.__AUTOBROWSER_INSTALLED__ = true;
     window.top.__AUTOBROWSER_EVENTS__ = window.top.__AUTOBROWSER_EVENTS__ || [];
 
     function cssPath(el){
       if(!el) return '';
-      try{
+      try {
         if(el.id) return '#'+el.id;
-        var parts=[];
-        var node=el;
+        var parts = [];
+        var node = el;
         while(node && node.nodeType===1 && node.tagName.toLowerCase()!=='html'){
-          var sel=node.tagName.toLowerCase();
+          var sel = node.tagName.toLowerCase();
           if(node.className){
-            var cls = node.className.trim().split(/\s+/).join('.');
-            if(cls) sel += '.'+cls;
+            sel += '.' + node.className.trim().split(/\s+/).join('.');
           }
-          var sib=node; var nth=1;
+          var sib = node; var nth = 1;
           while(sib.previousElementSibling){
             sib = sib.previousElementSibling;
             if(sib.tagName === node.tagName) nth++;
@@ -36,76 +32,54 @@ JS_LISTENER = r"""
           node = node.parentElement;
         }
         return parts.join(' > ');
-      }catch(e){
-        return '';
-      }
+      } catch(e){ return ''; }
     }
 
-    function push(ev){
-      try{ window.top.__AUTOBROWSER_EVENTS__.push(ev); }catch(e){}
-    }
+    function push(ev){ try{ window.top.__AUTOBROWSER_EVENTS__.push(ev); }catch(e){} }
 
     document.addEventListener('click', function(e){
-      try{
-        var el=e.target;
-        push({action:'click', selector: cssPath(el), tag: el.tagName, text: (el.innerText||'').trim(), ts: Date.now()});
-      }catch(e){}
+      try { push({action:'click', selector: cssPath(e.target), tag: e.target.tagName, text: (e.target.innerText||'').trim(), ts: Date.now()}); } catch(e){}
     }, true);
 
     document.addEventListener('input', function(e){
-      try{
-        var el=e.target;
+      try {
+        var el = e.target;
         var tag = el.tagName && el.tagName.toLowerCase();
-        if(tag==='input' || tag==='textarea' || el.isContentEditable){
-          push({action:'type', selector: cssPath(el), value: el.value||el.innerText||'', ts: Date.now()});
+        if(tag === 'input' || tag === 'textarea' || el.isContentEditable){
+          push({action:'type', selector: cssPath(el), value: el.value || el.innerText || '', ts: Date.now()});
         }
-      }catch(e){}
+      } catch(e){}
     }, true);
 
     document.addEventListener('change', function(e){
-      try{
-        var el=e.target;
-        push({action:'type', selector: cssPath(el), value: el.value||'', ts: Date.now()});
-      }catch(e){}
+      try { push({action:'type', selector: cssPath(e.target), value: e.target.value||'', ts: Date.now()}); } catch(e){}
     }, true);
 
-    // scroll (debounced)
-    var sTO=null;
+    var sTO = null;
     window.addEventListener('scroll', function(){
       try{
         if(sTO) clearTimeout(sTO);
-        sTO = setTimeout(function(){
-          try{ push({action:'scroll', x: window.scrollX||0, y: window.scrollY||0, ts: Date.now()}); }catch(e){}
-        }, 220);
+        sTO = setTimeout(function(){ push({action:'scroll', x: window.scrollX||0, y: window.scrollY||0, ts: Date.now()}); }, 200);
       }catch(e){}
     }, true);
 
-    // drag events
-    document.addEventListener('dragstart', function(e){
-      try{ push({action:'dragstart', selector: cssPath(e.target), ts: Date.now()}); }catch(e){}
-    }, true);
-    document.addEventListener('dragend', function(e){
-      try{ push({action:'dragend', selector: cssPath(e.target), ts: Date.now()}); }catch(e){}
-    }, true);
+    document.addEventListener('dragstart', function(e){ try{ push({action:'dragstart', selector: cssPath(e.target), ts: Date.now()}); }catch(e){} }, true);
+    document.addEventListener('dragend', function(e){ try{ push({action:'dragend', selector: cssPath(e.target), ts: Date.now()}); }catch(e){} }, true);
 
-    window.addEventListener('beforeunload', function(){
-      try{ push({action:'navigate_marker', url: location.href, ts: Date.now()}); }catch(e){}
-    });
+    window.addEventListener('beforeunload', function(){ try{ push({action:'navigate_marker', url: location.href, ts: Date.now()}); }catch(e){} });
 
     return 'ok';
-  }catch(ex){
-    return 'err';
-  }
+  } catch(ex) { return 'err'; }
 })();
 """
 
-JS_FLUSH = r"""
+JS_FLUSH = """
 (function(){
-  try{
+  try {
     var ev = (window.top && window.top.__AUTOBROWSER_EVENTS__) || [];
     var out = JSON.stringify(ev.splice(0, ev.length));
     return out;
-  }catch(e){ return '[]';}
+  } catch(e) { return '[]'; }
 })();
 """
 
@@ -118,26 +92,44 @@ class Recorder:
         self._lock = threading.Lock()
         self.script = []
 
-    # install via CDP (persistent) and also via execute_script (current page)
+    # install via CDP (persistent) and also injection into current document
     def install_listener(self):
         if not self.driver:
             return False
+        ok = False
         try:
-            # persistent on new documents
+            # persistent injection so new documents have this too
             try:
                 self.driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source": JS_LISTENER})
+                ok = True
             except Exception:
-                pass
-            # also inject into current document
+                ok = ok or False
+            # also inject into current window
             try:
-                self.driver.execute_script(JS_LISTENER)
+                res = self.driver.execute_script(JS_LISTENER)
+                ok = True if res else ok
             except Exception:
-                pass
-            return True
+                ok = ok or False
+            return ok
         except Exception:
             return False
 
-    def _poll_loop(self):
+    def _append(self, ev):
+        action = ev.get('action')
+        if action == 'click':
+            self.script.append({'action':'click','selector':ev.get('selector'),'meta':{'tag':ev.get('tag'),'text':ev.get('text')},'ts':ev.get('ts')})
+        elif action == 'type':
+            self.script.append({'action':'type','selector':ev.get('selector'),'value':ev.get('value',''),'ts':ev.get('ts')})
+        elif action == 'scroll':
+            self.script.append({'action':'scroll','x':int(ev.get('x',0)),'y':int(ev.get('y',0)),'ts':ev.get('ts')})
+        elif action in ('dragstart','dragend'):
+            self.script.append({'action':action,'selector':ev.get('selector'),'ts':ev.get('ts')})
+        elif action == 'navigate_marker':
+            self.script.append({'action':'navigate_marker','url':ev.get('url'),'ts':ev.get('ts')})
+        else:
+            self.script.append(ev)
+
+    def _poll(self):
         while self._running:
             try:
                 raw = self.driver.execute_script(JS_FLUSH)
@@ -149,7 +141,7 @@ class Recorder:
                     if arr:
                         with self._lock:
                             for ev in arr:
-                                self._append_ev(ev)
+                                self._append(ev)
                 time.sleep(self.poll_interval)
             except WebDriverException:
                 time.sleep(self.poll_interval)
@@ -158,10 +150,11 @@ class Recorder:
 
     def start(self):
         if not self.driver:
-            raise RuntimeError("Driver missing")
+            raise RuntimeError("Driver not set")
+        # ensure listener installed
         self.install_listener()
         self._running = True
-        self._thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self._thread = threading.Thread(target=self._poll, daemon=True)
         self._thread.start()
 
     def stop(self):
@@ -169,23 +162,6 @@ class Recorder:
         if self._thread:
             self._thread.join(timeout=2)
             self._thread = None
-
-    def _append_ev(self, ev):
-        act = ev.get('action')
-        if act == 'click':
-            self.script.append({'action':'click','selector':ev.get('selector'),'meta':{'tag':ev.get('tag'),'text':ev.get('text')},'ts':ev.get('ts')})
-        elif act == 'type':
-            val = ev.get('value','')
-            self.script.append({'action':'type','selector':ev.get('selector'),'value':val,'ts':ev.get('ts')})
-        elif act == 'scroll':
-            self.script.append({'action':'scroll','x':ev.get('x',0),'y':ev.get('y',0),'ts':ev.get('ts')})
-        elif act in ('dragstart','dragend'):
-            self.script.append({'action':act,'selector':ev.get('selector'),'ts':ev.get('ts')})
-        elif act == 'navigate_marker':
-            self.script.append({'action':'navigate_marker','url':ev.get('url'),'ts':ev.get('ts')})
-        else:
-            # unknown - store raw
-            self.script.append(ev)
 
     def get_script(self):
         with self._lock:
@@ -197,21 +173,22 @@ class Recorder:
 
     def save(self, path):
         with self._lock:
-            with open(path,'w',encoding='utf-8') as f:
+            with open(path, 'w', encoding='utf-8') as f:
                 json.dump(self.script, f, indent=2, ensure_ascii=False)
 
     def load(self, path):
-        with open(path,'r',encoding='utf-8') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         with self._lock:
             self.script = data
 
-    # manual helpers
     def add_wait(self, seconds):
         with self._lock:
             self.script.append({'action':'wait','seconds':float(seconds),'ts':int(time.time()*1000)})
 
     def add_screenshot(self, path=None):
+        if not self.driver:
+            return None
         if not path:
             path = os.path.abspath(f"screenshot_{int(time.time())}.png")
         try:
@@ -232,10 +209,33 @@ class Recorder:
         with self._lock:
             self.script.append({'action':'scroll','x':x,'y':y,'ts':int(time.time()*1000)})
 
+    # diagnostic: push a test event from JS and then poll it back
+    def test_listener(self):
+        if not self.driver:
+            return False, "no-driver"
+        try:
+            # push a test event directly into top storage
+            js = "window.top.__AUTOBROWSER_EVENTS__ = window.top.__AUTOBROWSER_EVENTS__ || []; window.top.__AUTOBROWSER_EVENTS__.push({action:'_test', ts:Date.now()}); return true;"
+            try:
+                self.driver.execute_script(js)
+            except Exception:
+                # fall back to CDP method (some environments allow)
+                pass
+            # immediately flush once
+            raw = self.driver.execute_script(JS_FLUSH)
+            try:
+                arr = json.loads(raw)
+            except Exception:
+                arr = []
+            # check if test event present
+            found = any(a.get('action') == '_test' for a in arr)
+            return found, f"polled:{len(arr)}"
+        except Exception as e:
+            return False, str(e)
+
     # playback
     def _find(self, selector):
-        if not selector:
-            return None
+        if not selector: return None
         try:
             return self.driver.find_element(By.CSS_SELECTOR, selector)
         except Exception:
@@ -256,8 +256,8 @@ class Recorder:
                             el.click()
                         except Exception:
                             try:
-                                self.driver.execute_script("arguments[0].click();", el)
-                            except Exception:
+                                self.driver.execute_script("arguments[0].click()", el)
+                            except:
                                 pass
                 elif a == 'type':
                     el = self._find(step.get('selector'))
@@ -269,7 +269,7 @@ class Recorder:
                             pass
                 elif a == 'scroll':
                     try:
-                        self.driver.execute_script("window.scrollTo(arguments[0], arguments[1]);", int(step.get('x',0)), int(step.get('y',0)))
+                        self.driver.execute_script("window.scrollTo(arguments[0], arguments[1])", int(step.get('x',0)), int(step.get('y',0)))
                     except Exception:
                         pass
                 elif a == 'wait':
@@ -285,10 +285,10 @@ class Recorder:
                     url = step.get('url')
                     if url:
                         self.driver.get(url)
-                        time.sleep(0.7)
+                        time.sleep(1)
                         try:
                             self.install_listener()
-                        except Exception:
+                        except:
                             pass
                 elif a in ('dragstart','dragend'):
                     el = self._find(step.get('selector'))
@@ -301,7 +301,6 @@ class Recorder:
                             """, el, a)
                         except Exception:
                             pass
-                # ignore navigate_marker entries
             except Exception:
                 pass
             time.sleep(delay_between)
