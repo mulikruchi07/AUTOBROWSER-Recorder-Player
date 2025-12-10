@@ -1,9 +1,10 @@
 # recorder/engine.py
 import json, time, threading, os
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException, NoSuchFrameException
 
 # JAVASCRIPT LISTENER
- 
+
 JS_LISTENER = """
 window.__EVTS = window.__EVTS || [];
 
@@ -27,20 +28,16 @@ function cssPath(el){
 
 // CLICK
 document.addEventListener("click", e => {
-    window.__EVTS.push({
-        action: "click",
-        selector: cssPath(e.target),
-        ts: Date.now()
-    });
+    window.__EVTS.push({ action:"click", selector:cssPath(e.target), ts:Date.now() });
 }, true);
 
 // TYPE
 document.addEventListener("input", e => {
     window.__EVTS.push({
-        action: "type",
-        selector: cssPath(e.target),
-        value: e.target.value || "",
-        ts: Date.now()
+        action:"type",
+        selector:cssPath(e.target),
+        value:e.target.value || "",
+        ts:Date.now()
     });
 }, true);
 
@@ -61,26 +58,26 @@ window.addEventListener("scroll", () => {
 // DRAG START
 document.addEventListener("dragstart", e => {
     window.__EVTS.push({
-        action: "dragstart",
-        selector: cssPath(e.target),
-        ts: Date.now()
+        action:"dragstart",
+        selector:cssPath(e.target),
+        ts:Date.now()
     });
 }, true);
 
 // DRAG END
 document.addEventListener("dragend", e => {
     window.__EVTS.push({
-        action: "dragend",
-        selector: cssPath(e.target),
-        ts: Date.now()
+        action:"dragend",
+        selector:cssPath(e.target),
+        ts:Date.now()
     });
 }, true);
 """
 
-# Flush events
+# FLUSH
 JS_FLUSH = "return window.__EVTS.splice(0, window.__EVTS.length);"
 
-# RECORDER CLASS
+# RECORDER
 
 class Recorder:
     def __init__(self, driver):
@@ -88,18 +85,35 @@ class Recorder:
         self.script = []
         self.running = False
 
+    # Inject into main window + ALL nested iframes
     def install_listener(self):
+        self._inject_into_frame(None)  # main page
+
+        # inject into iframes
+        frames = self.driver.find_elements(By.TAG_NAME, "iframe")
+        for idx, _ in enumerate(frames):
+            try:
+                self.driver.switch_to.frame(idx)
+                self._inject_into_frame(idx)
+            except NoSuchFrameException:
+                pass
+            except Exception:
+                pass
+            finally:
+                self.driver.switch_to.default_content()
+
+    def _inject_into_frame(self, id):
         try:
             self.driver.execute_script(JS_LISTENER)
-            return True
-        except:
-            return False
+        except Exception:
+            pass
 
+    # Poll JS events
     def _poll(self):
         while self.running:
             try:
                 events = self.driver.execute_script(JS_FLUSH)
-            except:
+            except WebDriverException:
                 events = []
 
             for ev in events:
@@ -127,21 +141,21 @@ class Recorder:
 
     # PLAYBACK
     def _find(self, sel):
-        try: return self.driver.find_element(By.CSS_SELECTOR, sel)
-        except: return None
+        try:
+            return self.driver.find_element(By.CSS_SELECTOR, sel)
+        except:
+            return None
 
     def play(self):
         for step in self.script:
             act = step["action"]
 
-            # CLICK
             if act == "click":
                 el = self._find(step["selector"])
                 if el:
                     try: el.click()
                     except: pass
 
-            # TYPE
             elif act == "type":
                 el = self._find(step["selector"])
                 if el:
@@ -151,7 +165,6 @@ class Recorder:
                     except:
                         pass
 
-            # SCROLL
             elif act == "scroll":
                 try:
                     self.driver.execute_script(
@@ -161,36 +174,34 @@ class Recorder:
                 except:
                     pass
 
-            # WAIT
             elif act == "wait":
-                time.sleep(step["seconds"])
+                time.sleep(step.get("seconds", 1))
 
-            # SCREENSHOT
             elif act == "screenshot":
                 try:
                     self.driver.save_screenshot(step["path"])
                 except:
                     pass
 
-            # DRAG START
+            # DRAGSTART
             elif act == "dragstart":
                 el = self._find(step["selector"])
                 if el:
                     try:
                         self.driver.execute_script("""
-                            const ev = new DragEvent('dragstart', { bubbles:true });
+                            const ev = new DragEvent('dragstart', {bubbles:true, cancelable:true});
                             arguments[0].dispatchEvent(ev);
                         """, el)
                     except:
                         pass
 
-            # DRAG END
+            # DRAGEND
             elif act == "dragend":
                 el = self._find(step["selector"])
                 if el:
                     try:
                         self.driver.execute_script("""
-                            const ev = new DragEvent('dragend', { bubbles:true });
+                            const ev = new DragEvent('dragend', {bubbles:true, cancelable:true});
                             arguments[0].dispatchEvent(ev);
                         """, el)
                     except:
