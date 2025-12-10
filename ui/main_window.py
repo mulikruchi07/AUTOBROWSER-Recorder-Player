@@ -9,7 +9,7 @@ from core.driver_manager import get_driver_with_temp_profile
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("AUTOBROWSER Recorder (Scroll + Wait + Screenshot + Drag)")
+        root.title("AUTOBROWSER Recorder (Full RPA Version)")
         root.geometry("900x600")
 
         self.driver = None
@@ -36,19 +36,15 @@ class App:
         tk.Button(left, text="Insert Wait", width=25, command=self.insert_wait).pack(pady=4)
         tk.Button(left, text="Insert Screenshot", width=25, command=self.insert_screenshot).pack(pady=4)
 
-        # Event count
         self.ev_count = tk.StringVar(value="Events: 0")
         tk.Label(left, textvariable=self.ev_count).pack(pady=10)
 
-        # Poller thread updates UI
         threading.Thread(target=self._poller, daemon=True).start()
 
-        # RIGHT — Script list
         self.listbox = tk.Listbox(root, width=100)
         self.listbox.pack(side="right", fill="both", expand=True, padx=10, pady=10)
 
-
-    # Backend polling for updates
+    # POLLING UI THREAD
     def _poller(self):
         while True:
             if self.rec:
@@ -59,22 +55,26 @@ class App:
 
     def _refresh_list(self):
         self.listbox.delete(0, tk.END)
-        if not self.rec: return
+        if not self.rec: 
+            return
 
         for ev in self.rec.get_script():
             a = ev["action"]
-
             if a == "scroll":
                 txt = f"SCROLL → x={ev['x']} y={ev['y']}"
             elif a == "wait":
                 txt = f"WAIT → {ev['seconds']}s"
             elif a == "screenshot":
                 txt = f"SCREENSHOT → {ev['path']}"
+            elif a == "drag":
+                txt = f"DRAG → {ev['from']['selector']} → {ev['to']['selector']}"
+            elif a == "navigate":
+                txt = f"NAVIGATE → {ev['url']}"
             else:
                 txt = f"{a.upper()} → {ev.get('selector')}"
             self.listbox.insert(tk.END, txt)
 
-    # Button actions
+    # BUTTON ACTIONS
     def launch(self):
         self.driver = get_driver_with_temp_profile()
         self.rec = Recorder(self.driver)
@@ -101,16 +101,12 @@ class App:
             messagebox.showinfo("Saved", path)
 
     def insert_wait(self):
-        sec = simpledialog.askfloat("Wait time", "Seconds to wait:", minvalue=0.1)
+        sec = simpledialog.askfloat("Wait time", "Seconds:", minvalue=0.1)
         if sec:
             self.rec.script.append({"action": "wait", "seconds": sec})
 
     def insert_screenshot(self):
         path = filedialog.asksaveasfilename(defaultextension=".png")
         if not path: return
-
-        try:
-            self.driver.save_screenshot(path)
-            self.rec.script.append({"action": "screenshot", "path": path})
-        except:
-            messagebox.showerror("Error", "Screenshot failed")
+        self.driver.save_screenshot(path)
+        self.rec.script.append({"action": "screenshot", "path": path})
