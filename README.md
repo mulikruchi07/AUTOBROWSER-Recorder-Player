@@ -47,3 +47,13 @@ pip install selenium webdriver-manager</pre>
     <li>Chromedriver is obtained automatically at runtime by <code>webdriver-manager</code> — ensure network access on first run or bundle a tested chromedriver matching target Chrome.</li>
     <li>Test the built executable on a clean VM similar to end-user machines.</li>
   </ul>
+  <h2>Applications (Testing & QA)</h2>
+  <ul>
+    <li><strong>Test evidence:</strong> Record exact user actions and screenshots to attach to bug reports.</li>
+    <li><strong>Reproducible bugs:</strong> Replay tester scripts so developers can reproduce issues precisely.</li>
+    <li><strong>Regression checks:</strong> Save failing-case scripts as repeatable regression tests.</li>
+    <li><strong>UI smoke tests:</strong> Automate frequent flows (login, checkout, form submission) for quick verification.</li>
+    <li><strong>Input tracking:</strong> Log typed values to identify which inputs cause validation or server errors.</li>
+    <li><strong>Automation starter:</strong> Use recorded scripts as templates for building full Selenium test cases.</li>
+    <li><strong>Onboarding & demos:</strong> Provide recorded flows for training or consistent product demonstrations.</li>
+  </ul>
