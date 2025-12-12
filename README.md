@@ -1,6 +1,7 @@
 <h1>CTRL+ALT+TICKET – Selenium RPA Recorder and Player</h1>
 
 <p>CTRL+ALT+TICKET is a Python Selenium-based recorder and player that captures browser interactions and replays them as automated workflows. It ships with a Tkinter GUI and a robust recording engine for clicks, typing, scrolling, drag-and-drop, navigation, waits and screenshots.</p>
+<img width="1002" height="652" alt="image" src="https://github.com/user-attachments/assets/a30c3496-288d-4287-b743-64f9f0bc922a" />
 
 <div class="section">
   <h2>Features</h2>
